@@ -1,20 +1,20 @@
 # Task 6 - lab 1
-# esto hace la tarea 3 pero con la API en vez de la consola
-# uso google-cloud-compute pq es la libreria mas facil q encontre
+# this repeats task 3 using the api instead of the cloud console
+# we use google-cloud-compute because it was the simplest official library we found
 
-# antes de correr esto en la terminal:
+# before running the script, use these commands in the terminal:
 #   pip install google-cloud-compute
 #   gcloud auth application-default login
-#   gcloud config set project TU_PROJECT_ID
-# (asi coge las credenciales solo, no hay q meter ninguna key en el codigo)
+#   gcloud config set project your_project_id
+# this uses application default credentials, so no key has to be added to the code
 
 import time
 from google.cloud import compute_v1
 
-# CAMBIA ESTO por lo tuyo!!
-PROJECT_ID = "modern-sublime-508206-i7"
+# change this to the project you are using
+PROJECT_ID = "commanding-port-508205-k5"
 REGION = "europe-west1"
-ZONE = "europe-west1-b"
+ZONE = "europe-west1-c"
 NETWORK = "ml-network"
 SUBNETWORK_NAME = "ml-subnetwork" 
 NETWORK_TAG = "deep"
@@ -27,10 +27,10 @@ NETWORK_LINK = f"global/networks/{NETWORK}"
 SUBNETWORK_LINK = f"regions/{REGION}/subnetworks/{SUBNETWORK_NAME}"
 
 
-def crear_vm2():
-    # vm2 con debian, le meto un startup-script q instala nginx solo al arrancar
-    # (es lo mismo q conectarse por ssh y hacer apt install nginx a mano)
-    print("creando vm2...")
+def create_vm2():
+    # vm2 uses debian and a startup script that installs nginx when it first boots
+    # this replaces connecting through ssh and installing nginx manually
+    print("\nCreating vm2...")
 
     disk = compute_v1.AttachedDisk(
         auto_delete=True,
@@ -66,44 +66,44 @@ def crear_vm2():
     )
 
     op = instances_client.insert(project=PROJECT_ID, zone=ZONE, instance_resource=instance)
-    op.result()  # esto bloquea hasta q termina, si no luego peta todo lo demas
-    print("vm2 lista")
+    op.result()  # wait until it finishes so the next api calls do not run too early
+    print("vm2 is ready")
 
 
-def obtener_ip(nombre_vm):
-    # esto es solo pa q me diga la ip y poder mirarla en el navegador
-    instance = instances_client.get(project=PROJECT_ID, zone=ZONE, instance=nombre_vm)
+def get_external_ip(vm_name):
+    # get the external ip so we can check the nginx page in the browser
+    instance = instances_client.get(project=PROJECT_ID, zone=ZONE, instance=vm_name)
     ip = instance.network_interfaces[0].access_configs[0].nat_i_p
-    print(f"ip de {nombre_vm}: {ip}  -> mete esto en el navegador: http://{ip}")
+    print(f"IP of {vm_name}: {ip}  -> open this in the browser: http://{ip}")
     return ip
 
 
-def crear_imagen_desde_vm2():
-    # para hacer la imagen primero hay q apagar la maquina, si no da error
-    print("apagando vm2...")
+def create_image_from_vm2():
+    # vm2 has to be stopped before its boot disk can be used for the image
+    print("Stopping vm2...")
     op = instances_client.stop(project=PROJECT_ID, zone=ZONE, instance="vm2")
     op.result()
 
-    print("creando imagen...")
+    print("Creating image...")
     image = compute_v1.Image(
         name=IMAGE_NAME,
         source_disk=f"projects/{PROJECT_ID}/zones/{ZONE}/disks/vm2",
     )
     op = images_client.insert(project=PROJECT_ID, image_resource=image)
     op.result()
-    print("imagen creada")
+    print("Image created")
 
 
-def borrar_vm2():
-    print("borrando vm2...")
+def delete_vm2():
+    print("Deleting vm2...")
     op = instances_client.delete(project=PROJECT_ID, zone=ZONE, instance="vm2")
     op.result()
-    print("vm2 borrada (el disco se va solo xq puse auto_delete=True)")
+    print("vm2 deleted (its disk is also deleted because auto_delete=True)")
 
 
-def crear_vm3():
-    # mismo rollo q vm2 pero cogiendo la imagen q nos hemos hecho
-    print("creando vm3 desde la imagen...")
+def create_vm3():
+    # vm3 has the same setup as vm2 but starts from the image we created
+    print("Creating vm3 from the image...")
 
     disk = compute_v1.AttachedDisk(
         auto_delete=True,
@@ -135,36 +135,39 @@ def crear_vm3():
 
     op = instances_client.insert(project=PROJECT_ID, zone=ZONE, instance_resource=instance)
     op.result()
-    print("vm3 lista")
+    print("vm3 is ready")
 
 
-def limpiar_todo():
-    # borramos todo menos la red, esa se queda pq la piden para las siguientes practicas
-    print("borrando vm3...")
+def cleanup():
+    # remove the vm and image, but keep the network because later labs need it
+    print("Deleting vm3...")
     op = instances_client.delete(project=PROJECT_ID, zone=ZONE, instance="vm3")
     op.result()
 
-    print("borrando la imagen...")
+    print("Deleting the image...")
     op = images_client.delete(project=PROJECT_ID, image=IMAGE_NAME)
     op.result()
 
-    print("ya esta todo borrado, la red ml-network se queda")
+    print("Cleanup finished, ml-network has been kept")
 
+def main():
+    create_vm2()
+    print("Waiting for the startup script to install nginx...")
+    time.sleep(90)  # 90 seconds was enough in our tests, increase it if nginx is not ready in your case
+    get_external_ip("vm2")
+    input("Check that nginx works in the browser, then press enter...")
+
+    create_image_from_vm2()
+    delete_vm2()
+
+    create_vm3()
+    print("Waiting for vm3 to boot...")
+    time.sleep(30)
+    get_external_ip("vm3")
+    input("Check that nginx also works on vm3, then press enter...")
+
+    cleanup()
 
 if __name__ == "__main__":
-    crear_vm2()
-    print("esperando un poco a q se instale nginx solo...")
-    time.sleep(90)  # 90s a ojo, si tu maquina va lenta sube esto
-    obtener_ip("vm2")
-    input("mira si funciona nginx en el navegador y dale a enter...")
-
-    crear_imagen_desde_vm2()
-    borrar_vm2()
-
-    crear_vm3()
-    print("esperando a q arranque vm3...")
-    time.sleep(30)
-    obtener_ip("vm3")
-    input("mira si funciona nginx en vm3 tambien y dale a enter...")
-
-    limpiar_todo()
+    main()
+    
